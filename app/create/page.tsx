@@ -53,7 +53,7 @@ export default function CreatePage() {
       // 3) vai alla pagina della poll
       window.location.href = `/p/${pollId}`
     } catch (e: any) {
-      setError(e?.message ?? 'Errore sconosciuto')
+        setError(typeof e === 'string' ? e : JSON.stringify(e, null, 2))
     } finally {
       setLoading(false)
     }
@@ -108,10 +108,11 @@ export default function CreatePage() {
       </div>
 
       {error && (
-        <p className="mt-4 text-sm text-red-600">
-          {error}
-        </p>
-      )}
+         <pre className="mt-4 text-sm text-red-600 whitespace-pre-wrap">
+             {error}
+         </pre>
+        )}
+
 
       <button
         className="mt-6 w-full border rounded-md p-3 font-medium"
