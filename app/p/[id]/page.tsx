@@ -1,7 +1,8 @@
 'use client'
 import { useParams } from 'next/navigation'
 import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '../../../lib/supabase'
+import { supabaseClient } from '../../../lib/supabase'
+
 
 type Poll = { id: string; question: string }
 type Option = { id: string; poll_id: string; text: string; votes: number }
@@ -17,6 +18,7 @@ function getFingerprint() {
 }
 
 export default function PollPage() {
+    const supabase = supabaseClient()
     const params = useParams()
     const pollId = params?.id as string | undefined  
   const [poll, setPoll] = useState<Poll | null>(null)

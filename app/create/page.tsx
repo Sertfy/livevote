@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '../../lib/supabase'
+import { supabaseClient } from '../../lib/supabase'
 
 export default function CreatePage() {
   const [question, setQuestion] = useState('')
@@ -23,7 +23,8 @@ export default function CreatePage() {
 
   async function onCreate() {
     setError(null)
-
+    
+    const supabase = supabaseClient()
     const q = question.trim()
     const opts = options.map(o => o.trim()).filter(Boolean)
 
