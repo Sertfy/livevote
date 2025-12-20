@@ -19,17 +19,14 @@ function getFingerprint() {
 
 export default function PollPage() {
   const params = useParams()
-  const pollId = (params?.id as string | undefined) ?? undefined
+  const pollId = params?.id as string | undefined
 
   const [poll, setPoll] = useState<Poll | null>(null)
   const [options, setOptions] = useState<Option[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Anti-spam (browser)
   const [hasVoted, setHasVoted] = useState(false)
-
-  // Stato voto
   const [voting, setVoting] = useState<string | null>(null)
 
   const totalVotes = useMemo(
@@ -37,12 +34,11 @@ export default function PollPage() {
     [options]
   )
 
-  // Carica stato "già votato" dal browser
-  useEffect(() => {
+  function markVoted() {
     if (!pollId) return
-    const voted = localStorage.getItem(`voted_${pollId}`)
-    setHasVoted(!!voted)
-  }, [pollId])
+    localStorage.setItem(`voted_${pollId}`, '1')
+    setHasVoted(true)
+  }
 
   async function load(pollIdSafe: string) {
     setError(null)
@@ -75,7 +71,13 @@ export default function PollPage() {
     }
   }
 
-  // Load + realtime
+  // 1) Legge subito se ha già votato (browser)
+  useEffect(() => {
+    if (!pollId) return
+    setHasVoted(!!localStorage.getItem(`voted_${pollId}`))
+  }, [pollId])
+
+  // 2) Load + realtime
   useEffect(() => {
     if (!pollId) return
 
@@ -106,38 +108,34 @@ export default function PollPage() {
 
     try {
       const supabase = supabaseClient()
-      const fp = getFingerprint()
+      const fingerprint = getFingerprint()
 
-      // 1) Inserisci voto (DB anti-doppio voto via unique(poll_id, fingerprint))
+      // A) Prova a registrare il voto (DB blocca doppioni via unique poll_id+fingerprint)
       const { error: vErr } = await supabase.from('votes').insert({
         poll_id: pollId,
         option_id: optionId,
-        fingerprint: fp,
+        fingerprint,
       })
 
       if (vErr) {
-        // Se ha già votato (vincolo unique), blocchiamo e segniamo come già votato
-        // Il messaggio può variare, quindi facciamo check soft.
         const msg = (vErr as any)?.message?.toLowerCase?.() ?? ''
-        if (msg.includes('duplicate') || msg.includes('unique') || msg.includes('already')) {
-          localStorage.setItem(`voted_${pollId}`, '1')
-          setHasVoted(true)
+        if (msg.includes('duplicate') || msg.includes('unique')) {
+          // ha già votato (anche se localStorage non era settato)
+          markVoted()
           await load(pollId)
           return
         }
         throw vErr
       }
 
-      // 2) Incrementa contatore voti (semplice)
-      const { error: uErr } = await supabase.rpc('increment_option_vote', {
-  option_id: optionId,
-})
-if (uErr) throw uErr
+      // B) Incremento atomico del contatore (nessun "current+1")
+      const { error: incErr } = await supabase.rpc('increment_option_vote', {
+        option_id: optionId,
+      })
+      if (incErr) throw incErr
 
-
-      // 3) Anti-spam browser: segna come votato
-      localStorage.setItem(`voted_${pollId}`, '1')
-      setHasVoted(true)
+      // C) Segna come votato lato browser
+      markVoted()
 
       await load(pollId)
     } catch (e: any) {
@@ -148,21 +146,22 @@ if (uErr) throw uErr
   }
 
   async function copyLink() {
-    const url = window.location.href
-    await navigator.clipboard.writeText(url)
+    await navigator.clipboard.writeText(window.location.href)
     alert('Link copiato!')
   }
 
-  if (!pollId) return <main className="p-6">Link non valido (id mancante).</main>
+  if (!pollId) return <main className="p-6">Link non valido.</main>
   if (loading) return <main className="p-6">Caricamento...</main>
   if (error) return <main className="p-6">Errore: {error}</main>
-  if (!poll) return <main className="p-6">Non trovata.</main>
+  if (!poll) return <main className="p-6">Votazione non trovata.</main>
 
   return (
     <main className="p-6 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold">{poll.question}</h1>
 
-      <p className="mt-2 text-sm text-gray-600">Totale voti: {totalVotes}</p>
+      <p className="mt-2 text-sm text-gray-600">
+        Totale voti: {totalVotes}
+      </p>
 
       {hasVoted && (
         <p className="mt-4 text-sm text-gray-700">
@@ -208,3 +207,4 @@ if (uErr) throw uErr
     </main>
   )
 }
+
