@@ -1,6 +1,6 @@
 import type { Metadata } from 'next'
 import { supabaseServer } from '../../../lib/supabaseServer'
-import PollClient from './PollClient'
+import ResultsClient from './ResultsClient'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,13 +14,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const supabase = supabaseServer()
   const { data } = await supabase.from('polls').select('question').eq('id', id).single()
 
-  const q = data?.question?.trim() || 'Sondaggio LiveVote'
+  const q = data?.question?.trim() || 'Risultati LiveVote'
   return {
-    title: `${q} – LiveVote`,
-    description: 'Vota con un click. Risultati in tempo reale.',
+    title: `Risultati: ${q} – LiveVote`,
+    description: 'Guarda i risultati in tempo reale e condividili.',
     openGraph: {
-      title: `${q} – LiveVote`,
-      description: 'Vota con un click. Risultati in tempo reale.',
+      title: `Risultati: ${q} – LiveVote`,
+      description: 'Guarda i risultati in tempo reale e condividili.',
       images: ['/og.png'],
     },
   }
@@ -28,5 +28,5 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function Page({ params }: PageProps) {
   const { id } = await params
-  return <PollClient pollId={id} />
+  return <ResultsClient pollId={id} />
 }

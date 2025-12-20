@@ -1,130 +1,193 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { supabaseClient } from '../../lib/supabase'
+
+function Card({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[28px] border border-zinc-200 bg-white/90 shadow-sm backdrop-blur px-5 py-6 sm:px-7">
+      {children}
+    </div>
+  )
+}
+
+function Pill({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="inline-flex items-center rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs font-semibold text-zinc-700">
+      {children}
+    </span>
+  )
+}
 
 export default function CreatePage() {
   const [question, setQuestion] = useState('')
-  const [options, setOptions] = useState<string[]>(['', ''])
+  const [opts, setOpts] = useState<string[]>(['', ''])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  function setOption(i: number, value: string) {
-    setOptions(prev => prev.map((v, idx) => (idx === i ? value : v)))
+  const cleaned = useMemo(() => opts.map(o => o.trim()).filter(Boolean), [opts])
+
+  const validation = useMemo(() => {
+    const q = question.trim()
+    if (q.length < 3) return { ok: false, msg: 'La domanda è troppo corta.' }
+
+    if (cleaned.length < 2) return { ok: false, msg: 'Inserisci almeno 2 opzioni.' }
+
+    const unique = new Set(cleaned)
+    if (unique.size !== cleaned.length) return { ok: false, msg: 'Le opzioni devono essere diverse.' }
+
+    return { ok: true, msg: '' }
+  }, [question, cleaned])
+
+  function setOpt(i: number, value: string) {
+    setOpts(prev => prev.map((x, idx) => (idx === i ? value : x)))
   }
 
-  function addOption() {
-    setOptions(prev => (prev.length >= 6 ? prev : [...prev, '']))
+  function addOpt() {
+    setOpts(prev => [...prev, ''])
   }
 
-  function removeOption(i: number) {
-    setOptions(prev => (prev.length <= 2 ? prev : prev.filter((_, idx) => idx !== i)))
+  function removeOpt(i: number) {
+    setOpts(prev => prev.filter((_, idx) => idx !== i))
   }
 
   async function onCreate() {
     setError(null)
-    
-    const supabase = supabaseClient()
-    const q = question.trim()
-    const opts = options.map(o => o.trim()).filter(Boolean)
-
-    if (q.length < 3) return setError('Scrivi una domanda (min 3 caratteri).')
-    if (opts.length < 2) return setError('Inserisci almeno 2 opzioni.')
+    if (!validation.ok) {
+      setError(validation.msg)
+      return
+    }
 
     setLoading(true)
     try {
-     // 1) crea poll
-    const { data: pollsRows, error: pollErr } = await supabase
-    .from('polls')
-    .insert({ question: q })
-    .select('id')
+      const supabase = supabaseClient()
 
-    if (pollErr) throw pollErr
+      // Insert poll (robusto: select senza single)
+      const { data: polls, error: pErr } = await supabase
+        .from('polls')
+        .insert({ question: question.trim() })
+        .select('id')
 
-    const pollId = pollsRows?.[0]?.id
-    if (!pollId) throw new Error('ID poll non ricevuto')
+      if (pErr) throw pErr
 
+      const pollId = polls?.[0]?.id
+      if (!pollId) throw new Error('Poll id mancante (insert non ha restituito id)')
 
-      // 2) crea opzioni
-      const rows = opts.map(text => ({ poll_id: pollId, text }))
-      const { error: optErr } = await supabase.from('options').insert(rows)
-      if (optErr) throw optErr
+      const toInsert = cleaned.map((text) => ({ poll_id: pollId, text, votes: 0 }))
+      const { error: oErr } = await supabase.from('options').insert(toInsert)
+      if (oErr) throw oErr
 
-      // 3) vai alla pagina della poll
       window.location.href = `/p/${pollId}`
     } catch (e: any) {
-        setError(typeof e === 'string' ? e : JSON.stringify(e, null, 2))
+      setError(e?.message ?? 'Errore durante la creazione')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <main className="p-6 max-w-xl mx-auto">
-      <h1 className="text-2xl font-bold">Crea una votazione</h1>
-
-      <label className="block mt-6 text-sm font-medium">Domanda</label>
-      <input
-        className="mt-2 w-full border rounded-md p-2"
-        value={question}
-        onChange={e => setQuestion(e.target.value)}
-        placeholder="Es: Dove andiamo stasera?"
-      />
-
-      <div className="mt-6">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">Opzioni (2–6)</label>
-          <button
-            className="text-sm underline"
-            onClick={addOption}
-            type="button"
-            disabled={options.length >= 6}
+    <main className="min-h-screen bg-gradient-to-b from-zinc-50 via-white to-zinc-100 px-4">
+      <div className="mx-auto max-w-2xl py-10">
+        <header className="flex items-center justify-between">
+          <Link
+            href="/"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
           >
-            + aggiungi
-          </button>
-        </div>
+            ← Home
+          </Link>
+          <div className="flex items-center gap-2">
+            <Pill>Zero login</Pill>
+            <Pill>Realtime</Pill>
+          </div>
+        </header>
 
-        <div className="mt-2 space-y-2">
-          {options.map((val, i) => (
-            <div key={i} className="flex gap-2">
-              <input
-                className="w-full border rounded-md p-2"
-                value={val}
-                onChange={e => setOption(i, e.target.value)}
-                placeholder={`Opzione ${i + 1}`}
-              />
+        <div className="mt-7 space-y-4">
+          <div className="text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+              Crea la tua votazione
+            </h1>
+            <p className="mt-2 text-zinc-600">
+              Domanda chiara + opzioni semplici = più risposte.
+            </p>
+          </div>
+
+          <Card>
+            <div className="space-y-5">
+              <div>
+                <label className="text-sm font-semibold text-zinc-800">Domanda</label>
+                <input
+                  className="mt-2 w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 text-base outline-none focus:ring-4 focus:ring-zinc-200"
+                  placeholder="Es. Dove andiamo a cena?"
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                />
+                <div className="mt-2 text-xs text-zinc-500">
+                  Tip: massimo impatto se sta in 1 riga.
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-semibold text-zinc-800">Opzioni</label>
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
+                    type="button"
+                    onClick={addOpt}
+                  >
+                    + Aggiungi
+                  </button>
+                </div>
+
+                <div className="mt-3 space-y-3">
+                  {opts.map((o, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input
+                        className="w-full rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 outline-none focus:ring-4 focus:ring-zinc-200"
+                        placeholder={`Opzione ${i + 1}`}
+                        value={o}
+                        onChange={(e) => setOpt(i, e.target.value)}
+                      />
+                      <button
+                        className="rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 font-bold hover:bg-zinc-50 active:scale-[0.99] transition disabled:opacity-40"
+                        type="button"
+                        onClick={() => removeOpt(i)}
+                        disabled={opts.length <= 2}
+                        title={opts.length <= 2 ? 'Minimo 2 opzioni' : 'Rimuovi'}
+                      >
+                        −
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="mt-3 text-xs text-zinc-500">
+                  Le opzioni vuote vengono ignorate. Duplicate non valide.
+                </div>
+              </div>
+
+              {error && (
+                <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
               <button
-                className="border rounded-md px-3"
-                onClick={() => removeOption(i)}
-                type="button"
-                disabled={options.length <= 2}
-                title="Rimuovi"
+                className={`w-full rounded-2xl px-5 py-4 text-base font-semibold transition active:scale-[0.99]
+                ${validation.ok ? 'bg-zinc-900 text-white hover:bg-zinc-800 shadow-sm' : 'border border-zinc-200 bg-white text-zinc-400'}`}
+                onClick={onCreate}
+                disabled={!validation.ok || loading}
               >
-                −
+                {loading ? 'Creo…' : 'Crea e genera link'}
               </button>
+
+              <div className="text-center text-xs text-zinc-500">
+                Dopo la creazione puoi condividere il link in un click.
+              </div>
             </div>
-          ))}
+          </Card>
         </div>
       </div>
-
-      {error && (
-         <pre className="mt-4 text-sm text-red-600 whitespace-pre-wrap">
-             {error}
-         </pre>
-        )}
-
-
-      <button
-        className="mt-6 w-full border rounded-md p-3 font-medium"
-        onClick={onCreate}
-        disabled={loading}
-      >
-        {loading ? 'Creazione...' : 'Crea e genera link'}
-      </button>
-
-      <p className="mt-4 text-xs text-gray-600">
-        Nessun login. Ti esce un link condivisibile.
-      </p>
     </main>
   )
 }

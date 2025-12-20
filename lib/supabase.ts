@@ -15,4 +15,3 @@ export function supabaseClient(): SupabaseClient {
   _client = createClient(url, key)
   return _client
 }
-
