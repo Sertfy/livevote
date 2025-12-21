@@ -20,6 +20,7 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
   const [options, setOptions] = useState<Option[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
   const [copied, setCopied] = useState(false)
 
   const totalVotes = useMemo(() => options.reduce((s, o) => s + (o.votes ?? 0), 0), [options])
@@ -66,15 +67,17 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollId])
 
+  const resultsUrl = typeof window !== 'undefined' ? window.location.href : ''
+  const voteUrl = typeof window !== 'undefined' ? `${window.location.origin}/p/${pollId}` : ''
+
+  const waResults = `https://wa.me/?text=${encodeURIComponent(`Risultati in tempo reale 👇\n${resultsUrl}`)}`
+  const tgResults = `https://t.me/share/url?url=${encodeURIComponent(resultsUrl)}&text=${encodeURIComponent('Risultati in tempo reale 👇')}`
+
   async function copyLink() {
-    setCopied(false)
-    await navigator.clipboard.writeText(window.location.href)
+    await navigator.clipboard.writeText(resultsUrl)
     setCopied(true)
     setTimeout(() => setCopied(false), 1200)
   }
-
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
-  const wa = `https://wa.me/?text=${encodeURIComponent(`Risultati: ${shareUrl}`)}`
 
   if (loading) return <main className="p-6 text-center text-zinc-600">Caricamento risultati…</main>
   if (!poll) return <main className="p-6">Sondaggio non trovato.</main>
@@ -99,9 +102,7 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
         <div className="mt-7 space-y-4">
           <div className="text-center">
             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{poll.question}</h1>
-            <p className="mt-2 text-zinc-600">
-              Risultati in tempo reale (perfetta da condividere).
-            </p>
+            <p className="mt-2 text-zinc-600">Risultati in tempo reale (condividibili).</p>
           </div>
 
           <Card>
@@ -133,6 +134,7 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
               </div>
             )}
 
+            {/* D2 share */}
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <button
                 className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
@@ -143,12 +145,37 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
 
               <a
                 className="rounded-2xl bg-zinc-900 px-5 py-3.5 text-center text-sm font-semibold text-white hover:bg-zinc-800 active:scale-[0.99] transition shadow-sm"
-                href={wa}
+                href={waResults}
                 target="_blank"
                 rel="noreferrer"
               >
-                📤 Condividi risultati
+                📤 Condividi risultati (WA)
               </a>
+
+              <a
+                className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-center text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
+                href={tgResults}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ✈️ Condividi risultati (TG)
+              </a>
+
+              {/* D3 loop: rimanda al voto */}
+              <a
+                className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-center text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
+                href={voteUrl}
+              >
+                🗳️ Rimanda al voto
+              </a>
+            </div>
+
+            {/* D3 spiegazione */}
+            <div className="mt-4 rounded-3xl border border-zinc-200 bg-white p-4">
+              <div className="font-semibold">Vuoi più voti?</div>
+              <div className="mt-1 text-sm text-zinc-600">
+                Rimanda il link voto nel gruppo: più persone votano, più il risultato è credibile.
+              </div>
             </div>
           </Card>
         </div>
@@ -156,4 +183,5 @@ export default function ResultsClient({ pollId }: { pollId: string }) {
     </main>
   )
 }
+
 

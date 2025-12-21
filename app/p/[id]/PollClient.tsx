@@ -7,6 +7,8 @@ import { supabaseClient } from '../../../lib/supabase'
 type Poll = { id: string; question: string }
 type Option = { id: string; poll_id: string; text: string; votes: number }
 
+const GOAL = 10
+
 function getFingerprint() {
   const key = 'lv_fp'
   let fp = localStorage.getItem(key)
@@ -33,14 +35,17 @@ export default function PollClient({ pollId }: { pollId: string }) {
 
   const [hasVoted, setHasVoted] = useState(false)
   const [voting, setVoting] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+
+  const [copiedVote, setCopiedVote] = useState(false)
+  const [copiedResults, setCopiedResults] = useState(false)
 
   const totalVotes = useMemo(() => options.reduce((sum, o) => sum + (o.votes ?? 0), 0), [options])
+  const missing = Math.max(0, GOAL - totalVotes)
+  const progressPct = Math.min(100, Math.round((totalVotes / GOAL) * 100))
 
-  function markVoted() {
-    localStorage.setItem(`voted_${pollId}`, '1')
-    setHasVoted(true)
-  }
+  useEffect(() => {
+    setHasVoted(!!localStorage.getItem(`voted_${pollId}`))
+  }, [pollId])
 
   async function load() {
     setError(null)
@@ -71,23 +76,22 @@ export default function PollClient({ pollId }: { pollId: string }) {
   }
 
   useEffect(() => {
-    setHasVoted(!!localStorage.getItem(`voted_${pollId}`))
-  }, [pollId])
-
-  useEffect(() => {
     load()
-
     const supabase = supabaseClient()
     const channel = supabase
       .channel(`opts-${pollId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'options', filter: `poll_id=eq.${pollId}` }, () => load())
       .subscribe()
-
     return () => {
       supabase.removeChannel(channel)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pollId])
+
+  function markVoted() {
+    localStorage.setItem(`voted_${pollId}`, '1')
+    setHasVoted(true)
+  }
 
   async function vote(optionId: string) {
     if (hasVoted) return
@@ -126,17 +130,25 @@ export default function PollClient({ pollId }: { pollId: string }) {
     }
   }
 
-  async function copyLink() {
-    setCopied(false)
-    await navigator.clipboard.writeText(window.location.href)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 1200)
+  const voteUrl = typeof window !== 'undefined' ? window.location.href : ''
+  const resultsUrl = typeof window !== 'undefined' ? `${window.location.origin}/r/${pollId}` : ''
+
+  const waVote = `https://wa.me/?text=${encodeURIComponent(`Vota qui 👇 (1 click)\n${voteUrl}`)}`
+  const tgVote = `https://t.me/share/url?url=${encodeURIComponent(voteUrl)}&text=${encodeURIComponent('Vota qui 👇 (1 click)')}`
+
+  const waResults = `https://wa.me/?text=${encodeURIComponent(`Risultati in tempo reale 👇\n${resultsUrl}`)}`
+  const tgResults = `https://t.me/share/url?url=${encodeURIComponent(resultsUrl)}&text=${encodeURIComponent('Risultati in tempo reale 👇')}`
+
+  async function copy(text: string, which: 'vote' | 'results') {
+    await navigator.clipboard.writeText(text)
+    if (which === 'vote') {
+      setCopiedVote(true); setTimeout(() => setCopiedVote(false), 1200)
+    } else {
+      setCopiedResults(true); setTimeout(() => setCopiedResults(false), 1200)
+    }
   }
 
-  const shareUrl = typeof window !== 'undefined' ? window.location.href : ''
-  const wa = `https://wa.me/?text=${encodeURIComponent(`Vota qui: ${shareUrl}`)}`
-
-  if (loading) return <main className="p-6 text-center text-zinc-600">Caricamento sondaggio…</main>
+  if (loading) return <main className="p-6 text-center text-zinc-600">Caricamento…</main>
   if (!poll) return <main className="p-6">Sondaggio non trovato.</main>
 
   return (
@@ -160,22 +172,35 @@ export default function PollClient({ pollId }: { pollId: string }) {
           <div className="text-center">
             <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">{poll.question}</h1>
             <p className="mt-2 text-zinc-600">
-              {hasVoted ? 'Hai già votato 👍' : 'Scegli un’opzione (1 click).'}
+              {hasVoted ? 'Hai votato ✅ Ora condividi per far votare gli altri.' : 'Scegli un’opzione (1 click).'}
             </p>
           </div>
 
           <Card>
+            {/* D1: Goal + progress */}
             <div className="flex items-center justify-between">
               <div className="text-sm text-zinc-600">Totale voti</div>
               <div className="text-xl font-bold">{totalVotes}</div>
             </div>
 
+            <div className="mt-3">
+              <div className="flex items-center justify-between text-xs text-zinc-600">
+                <span>Obiettivo: {GOAL} voti</span>
+                <span>{progressPct}%</span>
+              </div>
+              <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
+                <div className="h-2 rounded-full bg-zinc-300" style={{ width: `${progressPct}%` }} />
+              </div>
+              <div className="mt-2 text-sm text-zinc-600">
+                {missing > 0 ? `Mancano ${missing} voti per un risultato più affidabile.` : 'Risultato stabile ✅'}
+              </div>
+            </div>
+
+            {/* Opzioni */}
             <div className="mt-5 space-y-3">
               {options.map((o) => {
                 const pct = totalVotes > 0 ? Math.round((o.votes / totalVotes) * 100) : 0
                 const disabled = hasVoted || voting !== null
-                const isLoading = voting === o.id
-
                 return (
                   <button
                     key={o.id}
@@ -188,12 +213,9 @@ export default function PollClient({ pollId }: { pollId: string }) {
                       <div className="text-base font-semibold">{o.text}</div>
                       <div className="text-sm text-zinc-600">{o.votes} • {pct}%</div>
                     </div>
-
                     <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-zinc-100">
                       <div className="h-2 rounded-full bg-zinc-300" style={{ width: `${pct}%` }} />
                     </div>
-
-                    {isLoading && <div className="mt-3 text-sm text-zinc-500">Invio voto…</div>}
                   </button>
                 )
               })}
@@ -205,26 +227,64 @@ export default function PollClient({ pollId }: { pollId: string }) {
               </div>
             )}
 
+            {/* D2 + D3: Share blocks */}
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <button
                 className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
-                onClick={copyLink}
+                onClick={() => copy(voteUrl, 'vote')}
               >
-                {copied ? '✅ Link copiato!' : '📎 Copia link'}
+                {copiedVote ? '✅ Link voto copiato!' : '📎 Copia link voto'}
               </button>
 
               <a
                 className="rounded-2xl bg-zinc-900 px-5 py-3.5 text-center text-sm font-semibold text-white hover:bg-zinc-800 active:scale-[0.99] transition shadow-sm"
-                href={wa}
+                href={waVote}
                 target="_blank"
                 rel="noreferrer"
               >
-                📤 Condividi su WhatsApp
+                📤 Condividi voto (WhatsApp)
               </a>
+
+              <a
+                className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-center text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
+                href={tgVote}
+                target="_blank"
+                rel="noreferrer"
+              >
+                ✈️ Condividi voto (Telegram)
+              </a>
+
+              <button
+                className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-sm font-semibold hover:bg-zinc-50 active:scale-[0.99] transition"
+                onClick={() => copy(resultsUrl, 'results')}
+              >
+                {copiedResults ? '✅ Link risultati copiato!' : '📎 Copia link risultati'}
+              </button>
             </div>
 
+            {/* After vote: push results */}
+            {hasVoted && (
+              <div className="mt-6 rounded-3xl border border-zinc-200 bg-white p-4">
+                <div className="font-semibold">Ora fai girare il sondaggio 🔥</div>
+                <div className="mt-1 text-sm text-zinc-600">
+                  Invia il link voto nel gruppo. Quando arrivi a {GOAL} voti, manda anche i risultati.
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <a className="rounded-2xl bg-zinc-900 px-5 py-3.5 text-center text-sm font-semibold text-white hover:bg-zinc-800"
+                     href={waResults} target="_blank" rel="noreferrer">
+                    📊 Condividi risultati (WA)
+                  </a>
+                  <a className="rounded-2xl border border-zinc-200 bg-white px-5 py-3.5 text-center text-sm font-semibold hover:bg-zinc-50"
+                     href={tgResults} target="_blank" rel="noreferrer">
+                    📊 Condividi risultati (TG)
+                  </a>
+                </div>
+              </div>
+            )}
+
+            {/* D4 mini guidance */}
             <div className="mt-4 text-center text-xs text-zinc-500">
-              Tip: dopo che tutti hanno votato, condividi la pagina <span className="font-semibold">Risultati</span>.
+              Suggerimento: manda prima <span className="font-semibold">link voto</span>, poi dopo {GOAL} voti manda <span className="font-semibold">link risultati</span>.
             </div>
           </Card>
         </div>
